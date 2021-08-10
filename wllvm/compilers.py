@@ -31,6 +31,11 @@ def wcompile(mode):
     try:
         cmd = list(sys.argv)
         cmd = cmd[1:]
+        
+        #change command to remove any -O optimization other than -
+        for i in range(len(cmd)):
+            if '-O' in cmd[i]:
+                cmd[i] = '-O0'
 
         builder = getBuilder(cmd, mode)
 
