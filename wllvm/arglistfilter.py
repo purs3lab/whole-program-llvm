@@ -164,12 +164,13 @@ class ArgumentListFilter:
             # Optimization
             '-O' : (0, ArgumentListFilter.compileUnaryCallback),
             '-O0' : (0, ArgumentListFilter.compileUnaryCallback),
-            '-O1' : (0, ArgumentListFilter.compileUnaryCallback),
-            '-O2' : (0, ArgumentListFilter.compileUnaryCallback),
-            '-O3' : (0, ArgumentListFilter.compileUnaryCallback),
-            '-Os' : (0, ArgumentListFilter.compileUnaryCallback),
-            '-Ofast' : (0, ArgumentListFilter.compileUnaryCallback),
-            '-Og' : (0, ArgumentListFilter.compileUnaryCallback),
+            # allow only -O0 and disable all other optimization levels.
+            '-O1' : (0, ArgumentListFilter.warningLinkUnaryCallback),
+            '-O2' : (0, ArgumentListFilter.warningLinkUnaryCallback),
+            '-O3' : (0, ArgumentListFilter.warningLinkUnaryCallback),
+            '-Os' : (0, ArgumentListFilter.warningLinkUnaryCallback),
+            '-Ofast' : (0, ArgumentListFilter.warningLinkUnaryCallback),
+            '-Og' : (0, ArgumentListFilter.warningLinkUnaryCallback),
             # Component-specifiers
             '-Xclang' : (1, ArgumentListFilter.compileBinaryCallback),
             '-Xpreprocessor' : (1, ArgumentListFilter.defaultBinaryCallback),
