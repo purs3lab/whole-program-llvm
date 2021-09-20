@@ -79,12 +79,7 @@ def wcompilecopa(mode):
         cmd = list(sys.argv)
         cmd = cmd[1:]
 
-        # Add -O0 optimization always.
-        cmd = ['-O0'] + cmd
-
-        builder = getBuilder(cmd, mode)
-
-        af = builder.getBitcodeArglistFilter()
+        builder = getCopaBuilder(cmd, mode)
 
         rc = buildObject(builder)
 
@@ -92,16 +87,6 @@ def wcompilecopa(mode):
         if rc != 0:
             _logger.error('Failed to compile using given arguments: [%s]', legible_argstring)
             return rc
-
-        # no need to generate bitcode (e.g. configure only, assembly, ....)
-        (skipit, reason) = af.skipBitcodeGeneration()
-        if skipit:
-            _logger.debug('No work to do: %s', reason)
-            _logger.debug(af.__dict__)
-            return rc
-
-        # phase two
-        buildAndAttachBitcode(builder, af)
 
     except Exception as e:
         _logger.warning('%s: exception case: %s', mode, str(e))
@@ -148,6 +133,7 @@ class ClangBitcodeArgumentListFilter(ArgumentListFilter):
 
 class CustomCopaArgumentListFilter(CopaArgumentListFilter):
     def __init__(self, arglist):
+        self.expected_flags = []
         localCallbacks = {'-o': (1, CustomCopaArgumentListFilter.outputFileCallback)}
         opt_fpath = os.getenv("COPA_ALL_OPTIMIZATION_FLAGS_FILE")
         if opt_fpath is None or not os.path.exists(opt_fpath):
@@ -164,14 +150,14 @@ class CustomCopaArgumentListFilter(CopaArgumentListFilter):
         # super(ClangBitcodeArgumentListFilter, self).__init__(arglist, exactMatches=localCallbacks)
         super().__init__(arglist, exactMatches=localCallbacks)
         self.appendGivenOptimizationFlags()
-        
+
     def outputFileCallback(self, flag, filename):
         self.outputFilename = filename
 
     def ignoreOptimizationArg(self, flag):
         # Ignore the optimization flag.
         _logger.debug('Ignoring the optimization flag "%s"', flag)
-        pass
+        self.forbiddenArgs.append(flag)
 
     def appendGivenOptimizationFlags(self):
         # Here, we get the optimization flags from environment variable
@@ -186,7 +172,7 @@ class CustomCopaArgumentListFilter(CopaArgumentListFilter):
             for cline in all_lines:
                 cline = cline.strip()
                 if cline:
-                    self.compileArgs.append(cline)
+                    self.expected_flags.append(cline)
 
 
 def getHashedPathName(path):
@@ -371,17 +357,19 @@ class CopaBuilder(BuilderBase):
         return cc + ['-emit-llvm'] + self.getBitcodeGenerationFlags()
 
     def getCompiler(self):
-        if self.mode == "wllvmcopa++":
-            env, prog = 'COPA_CXX_NAME', 'g++'
-        elif self.mode == "wllvmcopa":
-            env, prog = 'COPA_CC_NAME', 'gcc'
-        else:
-            raise Exception(f'Unknown mode {self.mode}')
-        return [f'{self.prefixPath}{os.getenv(env) or prog}']
+        compilerEnv = 'COPA_COMPILER'
+        cstring = os.getenv(compilerEnv)
+        return [f'{self.prefixPath}{cstring}']
+
+    def getCommand(self):
+        allowed_flags = ['-O0']
+        allowed_flags.extend(self.getBitcodeArglistFilter().expected_flags)
+        original_cmd = BuilderBase.getCommand(self)
+        return allowed_flags + original_cmd
 
     def getBitcodeArglistFilter(self):
         if self.af is None:
-            self.af = CopaArgumentListFilter(self.cmd)
+            self.af = CustomCopaArgumentListFilter(self.cmd)
         return self.af
 
 
@@ -398,6 +386,8 @@ def getBuilder(cmd, mode):
         return ClangBuilder(cmd, mode, pathPrefix)
     if cstring == 'dragonegg':
         return DragoneggBuilder(cmd, mode, pathPrefix)
+    if mode == 'copa':
+        return CopaBuilder(cmd, mode, pathPrefix)
     if cstring is None:
         errorMsg = ' No compiler set. Please set environment variable %s'
         _logger.critical(errorMsg, compilerEnv)
@@ -405,6 +395,24 @@ def getBuilder(cmd, mode):
     errorMsg = '%s = %s : Invalid compiler type'
     _logger.critical(errorMsg, compilerEnv, str(cstring))
     raise Exception(errorMsg)
+
+
+def getCopaBuilder(cmd, mode):
+    compilerEnv = 'COPA_COMPILER'
+    cstring = os.getenv(compilerEnv)
+    pathPrefix = os.getenv(llvmCompilerPathEnv)  # Optional
+
+    _logger.debug('WLLVM compiler using %s', cstring)
+    if pathPrefix:
+        _logger.debug('WLLVM compiler path prefix "%s"', pathPrefix)
+
+    if cstring is not None:
+        return CopaBuilder(cmd, mode, pathPrefix)
+    else:
+        errorMsg = ' No compiler set. Please set environment variable %s'
+        _logger.critical(errorMsg, compilerEnv)
+        raise Exception(errorMsg)
+    return None
 
 
 def buildObject(builder):

@@ -45,8 +45,8 @@ class CopaArgumentListFilter:
             '-v' : (0, CopaArgumentListFilter.compileOnlyCallback),
 
             # Optimization
-            '-O' : (0, CopaArgumentListFilter.compileUnaryCallback),
-            '-O0' : (0, CopaArgumentListFilter.compileUnaryCallback),
+            '-O' : (0, CopaArgumentListFilter.warningLinkUnaryCallback),
+            '-O0' : (0, CopaArgumentListFilter.warningLinkUnaryCallback),
             # allow only -O0 and disable all other optimization levels.
             '-O1' : (0, CopaArgumentListFilter.warningLinkUnaryCallback),
             '-O2' : (0, CopaArgumentListFilter.warningLinkUnaryCallback),
@@ -76,8 +76,8 @@ class CopaArgumentListFilter:
             #iam: library.so.4.5.6 probably need a similar pattern for .dylib too.
             r'^.+\.dylib(\.\d)+$' : (0, CopaArgumentListFilter.objectFileCallback),
             r'^.+\.(So|so)(\.\d)+$' : (0, CopaArgumentListFilter.objectFileCallback),
-
-            r'^-0[0-9]+$' : (0, CopaArgumentListFilter.warningLinkUnaryCallback)
+            r'^-O[1-9]+$': (0, CopaArgumentListFilter.warningLinkUnaryCallback),
+            r'^-O[0-9][0-9]+$' : (0, CopaArgumentListFilter.warningLinkUnaryCallback)
 
         }
 
