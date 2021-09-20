@@ -1,7 +1,6 @@
 from __future__ import absolute_import
 from __future__ import print_function
 
-
 import os
 import sys
 import tempfile
@@ -11,11 +10,13 @@ from shutil import copyfile
 from .filetype import FileType
 from .popenwrapper import Popen
 from .arglistfilter import ArgumentListFilter
+from .copaarglistfilter import CopaArgumentListFilter
 
 from .logconfig import logConfig
 
 # Internal logger
 _logger = logConfig(__name__)
+
 
 def wcompile(mode):
     """ The workhorse, called from wllvm and wllvm++.
@@ -31,7 +32,7 @@ def wcompile(mode):
     try:
         cmd = list(sys.argv)
         cmd = cmd[1:]
-        
+
         # Add -O0 optimization always.
         cmd = ['-O0'] + cmd
 
@@ -63,13 +64,56 @@ def wcompile(mode):
     return rc
 
 
+def wcompilecopa(mode):
+    """ The workhorse, called from wllvm and wllvm++.
+    """
+
+    rc = 1
+
+    legible_argstring = ' '.join(list(sys.argv)[1:])
+
+    # for diffing with gclang
+    _logger.info('Entering CC [%s]', legible_argstring)
+
+    try:
+        cmd = list(sys.argv)
+        cmd = cmd[1:]
+
+        # Add -O0 optimization always.
+        cmd = ['-O0'] + cmd
+
+        builder = getBuilder(cmd, mode)
+
+        af = builder.getBitcodeArglistFilter()
+
+        rc = buildObject(builder)
+
+        # phase one compile failed. no point continuing
+        if rc != 0:
+            _logger.error('Failed to compile using given arguments: [%s]', legible_argstring)
+            return rc
+
+        # no need to generate bitcode (e.g. configure only, assembly, ....)
+        (skipit, reason) = af.skipBitcodeGeneration()
+        if skipit:
+            _logger.debug('No work to do: %s', reason)
+            _logger.debug(af.__dict__)
+            return rc
+
+        # phase two
+        buildAndAttachBitcode(builder, af)
+
+    except Exception as e:
+        _logger.warning('%s: exception case: %s', mode, str(e))
+
+    _logger.debug('Calling %s returned %d', list(sys.argv), rc)
+    return rc
 
 
 fullSelfPath = os.path.realpath(__file__)
 prefix = os.path.dirname(fullSelfPath)
 driverDir = prefix
 asDir = os.path.abspath(os.path.join(driverDir, 'dragonegg_as'))
-
 
 # Environmental variable for path to compiler tools (clang/llvm-link etc..)
 llvmCompilerPathEnv = 'LLVM_COMPILER_PATH'
@@ -94,12 +138,55 @@ darwinSectionName = '__llvm_bc'
 # building the bitcode file so that we don't clobber the object file.
 class ClangBitcodeArgumentListFilter(ArgumentListFilter):
     def __init__(self, arglist):
-        localCallbacks = {'-o' : (1, ClangBitcodeArgumentListFilter.outputFileCallback)}
-        #super(ClangBitcodeArgumentListFilter, self).__init__(arglist, exactMatches=localCallbacks)
+        localCallbacks = {'-o': (1, ClangBitcodeArgumentListFilter.outputFileCallback)}
+        # super(ClangBitcodeArgumentListFilter, self).__init__(arglist, exactMatches=localCallbacks)
         super().__init__(arglist, exactMatches=localCallbacks)
 
     def outputFileCallback(self, flag, filename):
         self.outputFilename = filename
+
+
+class CustomCopaArgumentListFilter(CopaArgumentListFilter):
+    def __init__(self, arglist):
+        localCallbacks = {'-o': (1, CustomCopaArgumentListFilter.outputFileCallback)}
+        opt_fpath = os.getenv("COPA_ALL_OPTIMIZATION_FLAGS_FILE")
+        if opt_fpath is None or not os.path.exists(opt_fpath):
+            _logger.error('File path provided for all optimization flags "%s" does not exist.', str(opt_fpath))
+            sys.exit(-1)
+        # Here, we skip all the optimization flags, if provided in the original compilation command.
+        with open(opt_fpath, "r") as fp:
+            all_lines = fp.readlines()
+            for cline in all_lines:
+                cline = cline.strip()
+                if cline:
+                    localCallbacks[cline] = (0, CustomCopaArgumentListFilter.ignoreOptimizationArg)
+
+        # super(ClangBitcodeArgumentListFilter, self).__init__(arglist, exactMatches=localCallbacks)
+        super().__init__(arglist, exactMatches=localCallbacks)
+        self.appendGivenOptimizationFlags()
+        
+    def outputFileCallback(self, flag, filename):
+        self.outputFilename = filename
+
+    def ignoreOptimizationArg(self, flag):
+        # Ignore the optimization flag.
+        _logger.debug('Ignoring the optimization flag "%s"', flag)
+        pass
+
+    def appendGivenOptimizationFlags(self):
+        # Here, we get the optimization flags from environment variable
+        # and append them to the compilerArgs
+        opt_fpath = os.getenv("COPA_CURR_OPTIMIZATION_FLAGS_FILE")
+        if opt_fpath is None or not os.path.exists(opt_fpath):
+            _logger.error('File path provided for current optimization flags "%s" does not exist.', str(opt_fpath))
+            sys.exit(-1)
+        # Here, we skip all the optimization flags, if provided in the original compilation command.
+        with open(opt_fpath, "r") as fp:
+            all_lines = fp.readlines()
+            for cline in all_lines:
+                cline = cline.strip()
+                if cline:
+                    self.compileArgs.append(cline)
 
 
 def getHashedPathName(path):
@@ -112,15 +199,16 @@ def attachBitcodePathToObject(bcPath, outFileName):
     (_, ext) = os.path.splitext(outFileName)
     _logger.debug('attachBitcodePathToObject: %s  ===> %s [ext = %s]', bcPath, outFileName, ext)
 
-    #iam: just object files, right?
+    # iam: just object files, right?
     fileType = FileType.getFileType(outFileName)
     if fileType not in (FileType.MACH_OBJECT, FileType.ELF_OBJECT):
-    #if fileType not in (FileType.MACH_OBJECT, FileType.MACH_SHARED, FileType.ELF_OBJECT, FileType.ELF_SHARED):
-        _logger.warning('Cannot attach bitcode path to "%s of type %s"', outFileName, FileType.getFileTypeString(fileType))
+        # if fileType not in (FileType.MACH_OBJECT, FileType.MACH_SHARED, FileType.ELF_OBJECT, FileType.ELF_SHARED):
+        _logger.warning('Cannot attach bitcode path to "%s of type %s"', outFileName,
+                        FileType.getFileTypeString(fileType))
         return
 
-    #iam: this also looks very dodgey; we need a more reliable way to do this:
-    #if ext not in ('.o', '.lo', '.os', '.So', '.po'):
+    # iam: this also looks very dodgey; we need a more reliable way to do this:
+    # if ext not in ('.o', '.lo', '.os', '.So', '.po'):
     #    _logger.warning('Cannot attach bitcode path to "%s of type %s"', outFileName, FileType.getReadableFileType(outFileName))
     #    return
 
@@ -143,7 +231,8 @@ def attachBitcodePathToObject(bcPath, outFileName):
     # Now write our bitcode section
     if sys.platform.startswith('darwin'):
         objcopyBin = f'{binUtilsTargetPrefix}-{"ld"}' if binUtilsTargetPrefix else 'ld'
-        objcopyCmd = [objcopyBin, '-r', '-keep_private_externs', outFileName, '-sectcreate', darwinSegmentName, darwinSectionName, f.name, '-o', outFileName]
+        objcopyCmd = [objcopyBin, '-r', '-keep_private_externs', outFileName, '-sectcreate', darwinSegmentName,
+                      darwinSectionName, f.name, '-o', outFileName]
     else:
         objcopyBin = f'{binUtilsTargetPrefix}-{"objcopy"}' if binUtilsTargetPrefix else 'objcopy'
         objcopyCmd = [objcopyBin, '--add-section', f'{elfSectionName}={f.name}', outFileName]
@@ -172,9 +261,10 @@ def attachBitcodePathToObject(bcPath, outFileName):
         _logger.error('objcopy failed with %s', orc)
         sys.exit(-1)
 
+
 class BuilderBase:
     def __init__(self, cmd, mode, prefixPath=None):
-        self.af = None     #memoize the arglist filter
+        self.af = None  # memoize the arglist filter
         self.cmd = cmd
         self.mode = mode
 
@@ -208,7 +298,7 @@ class ClangBuilder(BuilderBase):
     def getBitcodeGenerationFlags(self):
         # iam: If the environment variable LLVM_BITCODE_GENERATION_FLAGS is set we will add them to the
         # bitcode generation step
-        bitcodeFLAGS  = os.getenv('LLVM_BITCODE_GENERATION_FLAGS')
+        bitcodeFLAGS = os.getenv('LLVM_BITCODE_GENERATION_FLAGS')
         if bitcodeFLAGS:
             return bitcodeFLAGS.split()
         return []
@@ -232,6 +322,7 @@ class ClangBuilder(BuilderBase):
         if self.af is None:
             self.af = ClangBitcodeArgumentListFilter(self.cmd)
         return self.af
+
 
 class DragoneggBuilder(BuilderBase):
     def getBitcodeCompiler(self):
@@ -264,10 +355,40 @@ class DragoneggBuilder(BuilderBase):
             self.af = ArgumentListFilter(self.cmd)
         return self.af
 
+
+class CopaBuilder(BuilderBase):
+
+    def getBitcodeGenerationFlags(self):
+        # iam: If the environment variable LLVM_BITCODE_GENERATION_FLAGS is set we will add them to the
+        # bitcode generation step
+        bitcodeFLAGS = os.getenv('LLVM_BITCODE_GENERATION_FLAGS')
+        if bitcodeFLAGS:
+            return bitcodeFLAGS.split()
+        return []
+
+    def getBitcodeCompiler(self):
+        cc = self.getCompiler()
+        return cc + ['-emit-llvm'] + self.getBitcodeGenerationFlags()
+
+    def getCompiler(self):
+        if self.mode == "wllvmcopa++":
+            env, prog = 'COPA_CXX_NAME', 'g++'
+        elif self.mode == "wllvmcopa":
+            env, prog = 'COPA_CC_NAME', 'gcc'
+        else:
+            raise Exception(f'Unknown mode {self.mode}')
+        return [f'{self.prefixPath}{os.getenv(env) or prog}']
+
+    def getBitcodeArglistFilter(self):
+        if self.af is None:
+            self.af = CopaArgumentListFilter(self.cmd)
+        return self.af
+
+
 def getBuilder(cmd, mode):
     compilerEnv = 'LLVM_COMPILER'
     cstring = os.getenv(compilerEnv)
-    pathPrefix = os.getenv(llvmCompilerPathEnv) # Optional
+    pathPrefix = os.getenv(llvmCompilerPathEnv)  # Optional
 
     _logger.debug('WLLVM compiler using %s', cstring)
     if pathPrefix:
@@ -285,6 +406,7 @@ def getBuilder(cmd, mode):
     _logger.critical(errorMsg, compilerEnv, str(cstring))
     raise Exception(errorMsg)
 
+
 def buildObject(builder):
     objCompiler = builder.getCompiler()
     objCompiler.extend(builder.getCommand())
@@ -296,13 +418,12 @@ def buildObject(builder):
 
 # This command does not have the executable with it
 def buildAndAttachBitcode(builder, af):
-
-    #iam: when we have multiple input files we'll have to keep track of their object files.
+    # iam: when we have multiple input files we'll have to keep track of their object files.
     newObjectFiles = []
 
     hidden = not af.isCompileOnly
 
-    if  len(af.inputFiles) == 1 and af.isCompileOnly:
+    if len(af.inputFiles) == 1 and af.isCompileOnly:
         _logger.debug('Compile only case: %s', af.inputFiles[0])
         # iam:
         # we could have
@@ -335,11 +456,11 @@ def buildAndAttachBitcode(builder, af):
                 buildBitcodeFile(builder, srcFile, bcFile)
                 attachBitcodePathToObject(bcFile, objFile)
 
-
     if not af.isCompileOnly:
         linkFiles(builder, newObjectFiles)
 
     sys.exit(0)
+
 
 def linkFiles(builder, objectFiles):
     af = builder.getBitcodeArglistFilter()
@@ -368,6 +489,7 @@ def buildBitcodeFile(builder, srcFile, bcFile):
     if rc != 0:
         _logger.warning('Failed to generate bitcode "%s" for "%s"', bcFile, srcFile)
         sys.exit(rc)
+
 
 def buildObjectFile(builder, srcFile, objFile):
     af = builder.getBitcodeArglistFilter()
