@@ -33,6 +33,7 @@ setup(
         'console_scripts': [
             'wllvm-as = wllvm.as:main',
             'wllvm = wllvm.wllvm:main',
+            'wllvmcopa = wllvm.wllvmcopa:main',
             'wllvm++ = wllvm.wllvmpp:main',
             'wfortran = wllvm.wfortran:main',
             'wllvm-sanity-checker = wllvm.sanity:main',

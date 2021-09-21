@@ -137,15 +137,16 @@ class CustomCopaArgumentListFilter(CopaArgumentListFilter):
         localCallbacks = {'-o': (1, CustomCopaArgumentListFilter.outputFileCallback)}
         opt_fpath = os.getenv("COPA_ALL_OPTIMIZATION_FLAGS_FILE")
         if opt_fpath is None or not os.path.exists(opt_fpath):
-            _logger.error('File path provided for all optimization flags "%s" does not exist.', str(opt_fpath))
-            sys.exit(-1)
-        # Here, we skip all the optimization flags, if provided in the original compilation command.
-        with open(opt_fpath, "r") as fp:
-            all_lines = fp.readlines()
-            for cline in all_lines:
-                cline = cline.strip()
-                if cline:
-                    localCallbacks[cline] = (0, CustomCopaArgumentListFilter.ignoreOptimizationArg)
+            _logger.warning('File path provided for all optimization flags "%s" does not exist.', str(opt_fpath))
+            # sys.exit(-1)
+        else:
+            # Here, we skip all the optimization flags, if provided in the original compilation command.
+            with open(opt_fpath, "r") as fp:
+                all_lines = fp.readlines()
+                for cline in all_lines:
+                    cline = cline.strip()
+                    if cline:
+                        localCallbacks[cline] = (0, CustomCopaArgumentListFilter.ignoreOptimizationArg)
 
         # super(ClangBitcodeArgumentListFilter, self).__init__(arglist, exactMatches=localCallbacks)
         super().__init__(arglist, exactMatches=localCallbacks)
@@ -164,15 +165,16 @@ class CustomCopaArgumentListFilter(CopaArgumentListFilter):
         # and append them to the compilerArgs
         opt_fpath = os.getenv("COPA_CURR_OPTIMIZATION_FLAGS_FILE")
         if opt_fpath is None or not os.path.exists(opt_fpath):
-            _logger.error('File path provided for current optimization flags "%s" does not exist.', str(opt_fpath))
-            sys.exit(-1)
-        # Here, we skip all the optimization flags, if provided in the original compilation command.
-        with open(opt_fpath, "r") as fp:
-            all_lines = fp.readlines()
-            for cline in all_lines:
-                cline = cline.strip()
-                if cline:
-                    self.expected_flags.append(cline)
+            _logger.warning('File path provided for current optimization flags "%s" does not exist.', str(opt_fpath))
+            # sys.exit(-1)
+        else:
+            # Here, we skip all the optimization flags, if provided in the original compilation command.
+            with open(opt_fpath, "r") as fp:
+                all_lines = fp.readlines()
+                for cline in all_lines:
+                    cline = cline.strip()
+                    if cline:
+                        self.expected_flags.append(cline)
 
 
 def getHashedPathName(path):
@@ -418,6 +420,7 @@ def getCopaBuilder(cmd, mode):
 def buildObject(builder):
     objCompiler = builder.getCompiler()
     objCompiler.extend(builder.getCommand())
+    _logger.debug('Building as :%s', objCompiler)
     proc = Popen(objCompiler)
     rc = proc.wait()
     _logger.debug('buildObject rc = %d', rc)
