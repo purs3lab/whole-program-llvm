@@ -360,6 +360,10 @@ class CopaBuilder(BuilderBase):
 
     def getCompiler(self):
         compilerEnv = 'COPA_COMPILER'
+        if mode == "copa":
+            compilerEnv = 'COPA_COMPILER'
+        elif mode == "copa++":
+            compilerEnv = 'COPA_CXX_COMPILER'
         cstring = os.getenv(compilerEnv)
         return [f'{self.prefixPath}{cstring}']
 
@@ -400,7 +404,10 @@ def getBuilder(cmd, mode):
 
 
 def getCopaBuilder(cmd, mode):
-    compilerEnv = 'COPA_COMPILER'
+    if mode == "copa":
+        compilerEnv = 'COPA_COMPILER'
+    elif mode == "copa++":
+        compilerEnv = 'COPA_CXX_COMPILER'
     cstring = os.getenv(compilerEnv)
     pathPrefix = os.getenv(llvmCompilerPathEnv)  # Optional
 
