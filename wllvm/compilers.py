@@ -360,9 +360,9 @@ class CopaBuilder(BuilderBase):
 
     def getCompiler(self):
         compilerEnv = 'COPA_COMPILER'
-        if mode == "copa":
+        if self.mode == "copa":
             compilerEnv = 'COPA_COMPILER'
-        elif mode == "copa++":
+        elif self.mode == "copa++":
             compilerEnv = 'COPA_CXX_COMPILER'
         cstring = os.getenv(compilerEnv)
         return [f'{self.prefixPath}{cstring}']
