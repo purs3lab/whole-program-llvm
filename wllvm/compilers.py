@@ -135,6 +135,7 @@ class CustomCopaArgumentListFilter(CopaArgumentListFilter):
     def __init__(self, arglist):
         self.expected_flags = []
         localCallbacks = {'-o': (1, CustomCopaArgumentListFilter.outputFileCallback)}
+        regexmatches = {}
         opt_fpath = os.getenv("COPA_ALL_OPTIMIZATION_FLAGS_FILE")
         if opt_fpath is None or not os.path.exists(opt_fpath):
             _logger.warning('File path provided for all optimization flags "%s" does not exist.', str(opt_fpath))
@@ -146,10 +147,11 @@ class CustomCopaArgumentListFilter(CopaArgumentListFilter):
                 for cline in all_lines:
                     cline = cline.strip()
                     if cline:
-                        localCallbacks[cline] = (0, CustomCopaArgumentListFilter.ignoreOptimizationArg)
+                        cline = cline + ".*"
+                        regexmatches[cline] = (0, CustomCopaArgumentListFilter.ignoreOptimizationArg)
 
         # super(ClangBitcodeArgumentListFilter, self).__init__(arglist, exactMatches=localCallbacks)
-        super().__init__(arglist, exactMatches=localCallbacks)
+        super().__init__(arglist, exactMatches=localCallbacks, patternMatches=regexmatches)
         self.appendGivenOptimizationFlags()
 
     def outputFileCallback(self, flag, filename):
