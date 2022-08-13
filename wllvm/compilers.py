@@ -215,7 +215,7 @@ class ClangBuilder(BuilderBase):
 
     def getBitcodeCompiler(self):
         cc = self.getCompiler()
-        return cc + ['-emit-llvm -Xclang -disable-O0-optnone'] + self.getBitcodeGenerationFlags()
+        return cc + ['-emit-llvm', '-Xclang -disable-O0-optnone'] + self.getBitcodeGenerationFlags()
 
     def getCompiler(self):
         if self.mode == "wllvm++":
