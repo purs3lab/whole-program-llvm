@@ -33,7 +33,7 @@ def wcompile(mode):
         cmd = cmd[1:]
         
         # Add -O0 optimization always.
-        cmd = ['-O0'] + cmd
+        cmd = ['-O0 -Xclang -disable-O0-optnone'] + cmd
 
         builder = getBuilder(cmd, mode)
 
