@@ -33,7 +33,7 @@ def wcompile(mode):
         cmd = cmd[1:]
         
         # Add -O0 optimization always.
-        cmd = ['-O0 -Xclang -disable-O0-optnone'] + cmd
+        cmd = ['-O0'] + cmd
 
         builder = getBuilder(cmd, mode)
 
@@ -215,7 +215,7 @@ class ClangBuilder(BuilderBase):
 
     def getBitcodeCompiler(self):
         cc = self.getCompiler()
-        return cc + ['-emit-llvm'] + self.getBitcodeGenerationFlags()
+        return cc + ['-emit-llvm -Xclang -disable-O0-optnone'] + self.getBitcodeGenerationFlags()
 
     def getCompiler(self):
         if self.mode == "wllvm++":
